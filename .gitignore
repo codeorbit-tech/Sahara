@@ -1,8 +1,20 @@
-node_modules/
-build/
-dist/
-coverage/
+# Environment & Config
+.env
+venv/
+env/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# SQLite Database
+backend/*.db
+*.db
+
+# IDEs & System
+.vscode/
+.idea/
 .DS_Store
-*.log
-.env*
-!.env.example
