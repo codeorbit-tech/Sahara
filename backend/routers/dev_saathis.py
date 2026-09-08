@@ -83,22 +83,41 @@ def saathi_get_me(current_saathi: dict = Depends(get_current_saathi)):
 # ---------------------------------------------------------------------------
 
 @router.get("/api/saathi/inbox/chats", response_model=List[DevSaathiChatSummary])
-def get_saathi_inbox_chats(current_saathi: dict = Depends(get_current_saathi)):
+def get_saathi_inbox_chats(scope: Optional[str] = "my", current_saathi: dict = Depends(get_current_saathi)):
     """
-    Returns all student chat channels assigned to the logged-in Saathi.
-    Data is isolated: A Saathi can only see their own assigned students.
+    Returns student chat channels.
+    scope="my": Only chats assigned to the logged-in Saathi.
+    scope="all": All active student conversations across all Saathis (team view).
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT sc.id as chat_id, sc.session_id, sc.student_alias, sc.role, sc.status, sc.created_at,
-               s.inferred_tags
-        FROM saathi_chats sc
-        LEFT JOIN sessions s ON sc.session_id = s.session_id
-        WHERE sc.saathi_id = ?
-        ORDER BY sc.created_at DESC
-    """, (current_saathi["id"],))
+    if scope == "all":
+        cursor.execute("""
+            SELECT sc.id as chat_id, sc.session_id, sc.student_alias, sc.role, sc.status, sc.created_at,
+                   s.inferred_tags, sc.saathi_id, st.name as saathi_name, st.alias as saathi_alias
+            FROM saathi_chats sc
+            LEFT JOIN sessions s ON sc.session_id = s.session_id
+            LEFT JOIN saathis st ON sc.saathi_id = st.id
+            WHERE sc.status = 'ACTIVE'
+            ORDER BY COALESCE(
+                (SELECT MAX(created_at) FROM saathi_messages sm WHERE sm.saathi_chat_id = sc.id),
+                sc.created_at
+            ) DESC
+        """)
+    else:
+        cursor.execute("""
+            SELECT sc.id as chat_id, sc.session_id, sc.student_alias, sc.role, sc.status, sc.created_at,
+                   s.inferred_tags, sc.saathi_id, st.name as saathi_name, st.alias as saathi_alias
+            FROM saathi_chats sc
+            LEFT JOIN sessions s ON sc.session_id = s.session_id
+            LEFT JOIN saathis st ON sc.saathi_id = st.id
+            WHERE sc.saathi_id = ? AND sc.status = 'ACTIVE'
+            ORDER BY COALESCE(
+                (SELECT MAX(created_at) FROM saathi_messages sm WHERE sm.saathi_chat_id = sc.id),
+                sc.created_at
+            ) DESC
+        """, (current_saathi["id"],))
     chats = cursor.fetchall()
 
     results = []
@@ -131,6 +150,8 @@ def get_saathi_inbox_chats(current_saathi: dict = Depends(get_current_saathi)):
             student_alias=c["student_alias"] or "Student",
             role=c["role"] or "PRIMARY",
             status=c["status"] or "ACTIVE",
+            assigned_saathi_alias=c["saathi_alias"],
+            assigned_saathi_name=c["saathi_name"],
             matched_tags=matched_tags,
             last_message_text=last_msg["text"] if last_msg else None,
             last_message_sender=last_msg["sender"] if last_msg else None,
@@ -145,8 +166,7 @@ def get_saathi_inbox_chats(current_saathi: dict = Depends(get_current_saathi)):
 @router.get("/api/saathi/inbox/chat/{chat_id}", response_model=List[SaathiMessageResponse])
 def get_saathi_inbox_messages(chat_id: str, current_saathi: dict = Depends(get_current_saathi)):
     """
-    Fetches the chronological message history for a chat assigned to this Saathi.
-    Access control enforced: Reject if chat belongs to a different Saathi.
+    Fetches chronological message history for a chat channel.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -156,10 +176,6 @@ def get_saathi_inbox_messages(chat_id: str, current_saathi: dict = Depends(get_c
     if not chat_row:
         conn.close()
         raise HTTPException(status_code=404, detail="Chat channel not found.")
-
-    if chat_row["saathi_id"] != current_saathi["id"]:
-        conn.close()
-        raise HTTPException(status_code=403, detail="Unauthorized: This conversation is assigned to another Saathi.")
 
     cursor.execute("""
         SELECT id, saathi_chat_id, sender, text, timestamp
@@ -198,10 +214,6 @@ def post_saathi_inbox_reply(chat_id: str, req: DevSaathiReplyRequest, current_sa
     if not chat_row:
         conn.close()
         raise HTTPException(status_code=404, detail="Chat channel not found.")
-
-    if chat_row["saathi_id"] != current_saathi["id"]:
-        conn.close()
-        raise HTTPException(status_code=403, detail="Unauthorized: You cannot post in another Saathi's conversation.")
 
     msg_id = f"smsg-{uuid.uuid4().hex[:8]}"
     now_time = datetime.now().strftime("%I:%M %p")
@@ -313,6 +325,9 @@ def serve_dev_inbox():
     .btn-send { padding: 12px 20px; background: var(--primary); color: #042F2E; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
     .btn-send:hover { background: var(--primary-hover); }
 
+    .tab-btn { background: #0F1720; border: 1px solid var(--card-border); color: var(--text-muted); padding: 5px 10px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+    .tab-btn.active { background: var(--primary); color: #042F2E; border-color: var(--primary); }
+
     @media (max-width: 768px) {
       .sidebar { width: 100%; }
       #app-screen.in-chat .sidebar { display: none; }
@@ -368,8 +383,11 @@ def serve_dev_inbox():
   <div id="app-screen">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <h3>Assigned Students</h3>
-        <button onclick="fetchChats()" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-size:0.82rem;">↻ Refresh</button>
+        <div style="display: flex; gap: 6px;">
+          <button id="tab-my" class="tab-btn active" onclick="setScope('my')">My Chats</button>
+          <button id="tab-all" class="tab-btn" onclick="setScope('all')">All Chats</button>
+        </div>
+        <button onclick="fetchChats()" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-size:0.82rem;" title="Refresh">↻</button>
       </div>
       <div class="chat-list" id="chat-list">
         <div class="empty-state" style="padding: 40px 10px;">Loading conversations...</div>
@@ -399,6 +417,14 @@ def serve_dev_inbox():
     let currentToken = localStorage.getItem("saathi_token") || "";
     let activeChatId = null;
     let refreshTimer = null;
+    let currentScope = "my";
+
+    function setScope(scope) {
+      currentScope = scope;
+      document.getElementById("tab-my").classList.toggle("active", scope === "my");
+      document.getElementById("tab-all").classList.toggle("active", scope === "all");
+      fetchChats();
+    }
 
     async function checkAuth() {
       if (!currentToken) {
@@ -479,7 +505,7 @@ def serve_dev_inbox():
     async function fetchChats() {
       if (!currentToken) return;
       try {
-        const res = await fetch("/api/saathi/inbox/chats", {
+        const res = await fetch(`/api/saathi/inbox/chats?scope=${currentScope}`, {
           headers: { "Authorization": `Bearer ${currentToken}` }
         });
         if (!res.ok) return;
@@ -491,28 +517,33 @@ def serve_dev_inbox():
     function renderChatList(chats) {
       const listEl = document.getElementById("chat-list");
       if (!chats.length) {
-        listEl.innerHTML = '<div class="empty-state" style="padding: 40px 10px;">No assigned student conversations yet.</div>';
+        listEl.innerHTML = `<div class="empty-state" style="padding: 40px 10px;">${currentScope === 'my' ? 'No chats assigned to you right now. Click "All Chats" above to see campus conversations!' : 'No active student conversations yet.'}</div>`;
         return;
       }
       listEl.innerHTML = chats.map(c => `
-        <div class="chat-item ${c.chat_id === activeChatId ? 'active' : ''}" onclick="selectChat('${c.chat_id}', '${c.student_alias}')">
+        <div class="chat-item ${c.chat_id === activeChatId ? 'active' : ''}" onclick="selectChat('${c.chat_id}', '${escapeHtml(c.student_alias)}', '${escapeHtml(c.assigned_saathi_name || c.assigned_saathi_alias || '')}', '${c.role}')">
           <div class="chat-item-header">
-            <span class="student-alias">${c.student_alias}</span>
+            <span class="student-alias">${escapeHtml(c.student_alias)}</span>
             <span class="chat-time">${c.last_message_timestamp || ''}</span>
           </div>
-          <div class="last-msg">${c.last_message_sender === 'saathi' ? 'You: ' : ''}${c.last_message_text || 'No messages yet'}</div>
-          <div class="tag-pills">
-            ${c.matched_tags.map(t => `<span class="tag-pill">${t}</span>`).join('')}
+          <div class="last-msg"><strong>${c.last_message_sender === 'saathi' ? 'You: ' : (c.last_message_sender === 'student' ? 'Student: ' : '')}</strong>${escapeHtml(c.last_message_text || 'No messages yet')}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+            <div class="tag-pills">
+              ${c.matched_tags.map(t => `<span class="tag-pill">${escapeHtml(t)}</span>`).join('')}
+            </div>
+            <span style="font-size:0.68rem; color:var(--text-muted); background:var(--surface-border); padding:2px 6px; border-radius:4px;">
+              ${escapeHtml(c.assigned_saathi_name || c.assigned_saathi_alias || 'Peer')} (${c.role})
+            </span>
           </div>
         </div>
       `).join('');
     }
 
-    async function selectChat(chatId, alias) {
+    async function selectChat(chatId, alias, saathiName, role) {
       activeChatId = chatId;
       document.getElementById("app-screen").classList.add("in-chat");
       document.getElementById("active-student-title").textContent = `Chat with ${alias}`;
-      document.getElementById("active-student-subtitle").textContent = `ID: ${chatId}`;
+      document.getElementById("active-student-subtitle").textContent = `${chatId} • Assigned to ${saathiName || 'Saathi'} (${role || 'PRIMARY'})`;
       document.getElementById("input-container").style.display = "flex";
       fetchChats();
       await loadMessages(chatId);
@@ -536,16 +567,21 @@ def serve_dev_inbox():
         container.innerHTML = '<div class="empty-state">No messages yet. Send an encouraging intro!</div>';
         return;
       }
+      const wasAtBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 60;
       container.innerHTML = messages.map(m => `
         <div class="msg-bubble ${m.sender}">
+          <div style="font-size:0.72rem; opacity:0.8; margin-bottom:2px; font-weight:600;">${m.sender === 'saathi' ? 'Peer Saathi' : 'Student'}</div>
           <div>${escapeHtml(m.text)}</div>
           <div class="msg-time">${m.timestamp}</div>
         </div>
       `).join('');
-      container.scrollTop = container.scrollHeight;
+      if (wasAtBottom || messages.length <= 4) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
 
     async function pollActiveChat() {
+      await fetchChats();
       if (activeChatId) {
         await loadMessages(activeChatId);
       }
@@ -573,7 +609,7 @@ def serve_dev_inbox():
     }
 
     function escapeHtml(str) {
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
     // Init check

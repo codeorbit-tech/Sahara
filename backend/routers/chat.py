@@ -90,7 +90,8 @@ async def chat_endpoint(request: ChatRequest):
         peer_redirect = evaluate_peer_redirection(
             session_id=session_id,
             inferred_tags=merged_tags,
-            current_severity=suggested_severity
+            current_severity=suggested_severity,
+            student_message=request.userMessage
         )
 
     return ChatResponse(
@@ -113,6 +114,13 @@ def redirect_to_peer_endpoint(req: PeerRedirectRequest):
     cursor = conn.cursor()
     cursor.execute("SELECT inferred_tags FROM sessions WHERE session_id = ?", (session_id,))
     row = cursor.fetchone()
+    cursor.execute("""
+        SELECT text FROM chat_messages 
+        WHERE session_id = ? AND sender = 'student' 
+        ORDER BY created_at DESC LIMIT 1
+    """, (session_id,))
+    last_student_msg = cursor.fetchone()
+    student_message_text = last_student_msg["text"] if last_student_msg else None
     conn.close()
 
     tags = []
@@ -124,7 +132,12 @@ def redirect_to_peer_endpoint(req: PeerRedirectRequest):
     if req.preferred_tag and req.preferred_tag not in tags:
         tags.insert(0, req.preferred_tag)
 
-    redirect_info = evaluate_peer_redirection(session_id=session_id, inferred_tags=tags, current_severity="MODERATE")
+    redirect_info = evaluate_peer_redirection(
+        session_id=session_id,
+        inferred_tags=tags,
+        current_severity="MODERATE",
+        student_message=student_message_text
+    )
     if not redirect_info:
         raise HTTPException(status_code=404, detail="No suitable peer supporter match found for the current conversation.")
     return redirect_info

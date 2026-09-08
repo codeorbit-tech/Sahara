@@ -43,11 +43,12 @@ DOMAIN_METADATA: Dict[str, Dict[str, Any]] = {
     }
 }
 
-def get_or_create_dual_saathi_match(session_id: str, tags: Optional[List[str]] = None) -> SaathiMatchResponse:
+def get_or_create_dual_saathi_match(session_id: str, tags: Optional[List[str]] = None, student_message: Optional[str] = None) -> SaathiMatchResponse:
     """
     Finds or creates a dual-Saathi pairing (PRIMARY and SECONDARY) for the given session.
     Idempotent: If active chats already exist for this session, returns the existing assignments
     without creating redundant chats or double-incrementing Saathi load.
+    Also forwards the initial student message so the dev Saathi sees it immediately.
     """
     session_id = session_id.strip() if (session_id and session_id.strip()) else f"sess-{uuid.uuid4()}"
     conn = get_db_connection()
@@ -68,6 +69,16 @@ def get_or_create_dual_saathi_match(session_id: str, tags: Optional[List[str]] =
     if len(existing_chats) >= 2:
         primary_chat = next((c for c in existing_chats if c["role"] == "PRIMARY"), existing_chats[0])
         secondary_chat = next((c for c in existing_chats if c["role"] == "SECONDARY"), existing_chats[1])
+        if student_message and student_message.strip():
+            cursor.execute("SELECT text FROM saathi_messages WHERE saathi_chat_id = ? ORDER BY created_at DESC LIMIT 1", (primary_chat["chat_id"],))
+            last_m = cursor.fetchone()
+            if not last_m or last_m["text"] != student_message.strip():
+                now_time = datetime.now().strftime("%I:%M %p")
+                cursor.execute("""
+                    INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
+                    VALUES (?, ?, 'student', ?, ?)
+                """, (f"smsg-{uuid.uuid4().hex[:8]}", primary_chat["chat_id"], student_message.strip(), now_time))
+                conn.commit()
         conn.close()
         return SaathiMatchResponse(
             session_id=session_id,
@@ -205,6 +216,12 @@ def get_or_create_dual_saathi_match(session_id: str, tags: Optional[List[str]] =
         VALUES (?, ?, ?, ?, ?)
     """, (f"smsg-{uuid.uuid4().hex[:8]}", secondary_chat_id, "saathi", s_greeting, now_time))
 
+    if student_message and student_message.strip():
+        cursor.execute("""
+            INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
+            VALUES (?, ?, 'student', ?, ?)
+        """, (f"smsg-{uuid.uuid4().hex[:8]}", primary_chat_id, student_message.strip(), now_time))
+
     conn.commit()
     conn.close()
 
@@ -234,7 +251,7 @@ def get_or_create_dual_saathi_match(session_id: str, tags: Optional[List[str]] =
         )
     )
 
-def evaluate_peer_redirection(session_id: str, inferred_tags: List[str], current_severity: str = "MODERATE") -> Optional[PeerRedirectInfo]:
+def evaluate_peer_redirection(session_id: str, inferred_tags: List[str], current_severity: str = "MODERATE", student_message: Optional[str] = None) -> Optional[PeerRedirectInfo]:
     """
     Evaluates whether the student's conversation tags qualify for a peer Saathi redirection offer.
     Returns PeerRedirectInfo if qualified, or None if no domain match or severity is SEVERE.
@@ -263,7 +280,7 @@ def evaluate_peer_redirection(session_id: str, inferred_tags: List[str], current
     })
 
     try:
-        match = get_or_create_dual_saathi_match(session_id, inferred_tags)
+        match = get_or_create_dual_saathi_match(session_id, inferred_tags, student_message=student_message)
     except Exception:
         return None
 

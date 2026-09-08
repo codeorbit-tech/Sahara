@@ -193,6 +193,8 @@ class DevSaathiChatSummary(BaseModel):
     student_alias: str
     role: str
     status: str
+    assigned_saathi_alias: Optional[str] = None
+    assigned_saathi_name: Optional[str] = None
     matched_tags: List[str] = []
     last_message_text: Optional[str] = None
     last_message_sender: Optional[str] = None
