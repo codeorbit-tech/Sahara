@@ -12,6 +12,12 @@ def run_route_tests():
 
     # Initialize DB
     init_db()
+    from backend.database import get_db_connection
+    _conn = get_db_connection()
+    _conn.execute("UPDATE saathis SET current_load = 0")
+    _conn.commit()
+    _conn.close()
+
     client = TestClient(app)
     admin_headers = {"X-Admin-Key": "sahara-admin-secret-2025"}
 
@@ -271,6 +277,71 @@ def run_route_tests():
         history_res = client.get(f"/api/chat/history?sessionId={session_id}")
         assert len(history_res.json()["messages"]) == 0
     test("POST /api/chat/reset (Clear Conversation Log)", test_chat_reset)
+
+    # 23. Chat Layer 1: Exam Domain Tag Matching & Peer Redirection
+    redirect_chat_id = None
+    def test_chat_peer_redirection():
+        nonlocal redirect_chat_id
+        exam_session_id = f"exam-sess-{uuid.uuid4().hex[:8]}"
+        r = client.post("/api/chat", json={
+            "session_id": exam_session_id,
+            "userMessage": "I am facing huge stress with my upcoming exams and grades. I am completely overwhelmed by test anxiety.",
+            "currentSeverity": "MODERATE"
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert "peerRedirect" in data
+        assert data["peerRedirect"] is not None
+        pr = data["peerRedirect"]
+        assert pr["shouldRedirect"] is True
+        assert pr["matchedDomain"] in ["exam_period", "academic_stress"]
+        assert pr["matchedSaathi"] is not None
+        assert "NightOwl" in pr["matchedSaathi"]["alias"] or "Pacer" in pr["matchedSaathi"]["alias"] or "SeniorCode" in pr["matchedSaathi"]["alias"]
+        assert pr["matchedSaathi"]["chat_id"].startswith("schat-")
+        assert len(pr["handoffText"]) > 10
+        redirect_chat_id = pr["matchedSaathi"]["chat_id"]
+    test("POST /api/chat (Layer 1 Exam Domain Vibe Matching -> Layer 2 Peer Redirection)", test_chat_peer_redirection)
+
+    # 24. Seamless Post-Redirection Peer Messaging
+    def test_seamless_peer_messaging():
+        assert redirect_chat_id is not None
+        r = client.post(f"/api/saathi/chat/{redirect_chat_id}/message", json={
+            "saathi_chat_id": redirect_chat_id,
+            "sender": "student",
+            "text": "Hi, Sahara suggested I connect with you about handling exam pressure."
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert "user_message" in data
+        assert "saathi_reply" in data
+        assert "exam" in data["saathi_reply"]["text"].lower() or "academic" in data["saathi_reply"]["text"].lower() or "alone" in data["saathi_reply"]["text"].lower()
+    test("POST /api/saathi/chat/{chat_id}/message (Immediate Seamless Handoff Messaging)", test_seamless_peer_messaging)
+
+    # 25. Explicit Peer Redirection Endpoint & Crisis Safety Suppression
+    def test_explicit_redirect_and_crisis_safety():
+        # A. Explicit redirect endpoint
+        red_sess = f"red-sess-{uuid.uuid4().hex[:8]}"
+        r1 = client.post("/api/chat/redirect-peer", json={
+            "session_id": red_sess,
+            "preferred_tag": "exam_period"
+        })
+        assert r1.status_code == 200
+        d1 = r1.json()
+        assert d1["shouldRedirect"] is True
+        assert d1["matchedDomain"] == "exam_period"
+        assert d1["matchedSaathi"] is not None
+
+        # B. Crisis safety: SEVERE distress must suppress peer redirection in favor of emergency crisis helplines
+        crisis_sess = f"crisis-sess-{uuid.uuid4().hex[:8]}"
+        r2 = client.post("/api/chat", json={
+            "session_id": crisis_sess,
+            "userMessage": "I want to end my life, I don't feel safe with myself right now."
+        })
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert d2["suggestedSeverity"] == "SEVERE"
+        assert d2["peerRedirect"] is None, "Peer redirection must be suppressed during SEVERE crisis"
+    test("POST /api/chat/redirect-peer & Crisis Safety Suppression", test_explicit_redirect_and_crisis_safety)
 
     print("\n" + "=" * 80)
     print(f" ALL {passed}/{total} BACKEND ROUTES TESTED & FUNCTIONING FLAWLESSLY!")

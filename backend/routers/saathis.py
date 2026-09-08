@@ -23,6 +23,7 @@ from backend.schemas import (
     ColorScheme
 )
 from backend.database import get_db_connection
+from backend.services.matching_service import get_or_create_dual_saathi_match
 
 router = APIRouter()
 
@@ -80,132 +81,10 @@ def match_saathi(req: SaathiMatchRequest):
     to prevent deterministic reverse-engineering. Returns only aliases and intros.
     """
     session_id = req.session_id.strip() if (req.session_id and req.session_id.strip()) else f"sess-{uuid.uuid4()}"
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # 1. Pull session tags
-    cursor.execute("SELECT inferred_tags FROM sessions WHERE session_id = ?", (session_id,))
-    session_row = cursor.fetchone()
-    student_tags = []
-    if session_row and session_row["inferred_tags"]:
-        try:
-            student_tags = json.loads(session_row["inferred_tags"])
-        except Exception:
-            student_tags = []
-    else:
-        # Create session record if not already created
-        now_iso = datetime.now().isoformat()
-        cursor.execute("INSERT INTO sessions (session_id, created_at, last_active, inferred_tags) VALUES (?, ?, ?, ?)",
-                       (session_id, now_iso, now_iso, '[]'))
-
-    # 2. Fetch available Saathis under capacity
-    cursor.execute("""
-        SELECT * FROM saathis 
-        WHERE current_load < max_capacity
-    """)
-    available_saathis = cursor.fetchall()
-
-    if len(available_saathis) < 2:
-        # Fallback if strict capacity allows less than 2: fetch all saathis ordered by load
-        cursor.execute("SELECT * FROM saathis ORDER BY current_load ASC")
-        available_saathis = cursor.fetchall()
-
-    if len(available_saathis) < 2:
-        conn.close()
-        raise HTTPException(status_code=503, detail="Not enough peer supporters available at this moment. Please try again shortly.")
-
-    # 3. Score tag overlap with random jitter
-    scored_candidates = []
-    for s in available_saathis:
-        vibe_tags_raw = json.loads(s["vibe_tags"] or "[]")
-        saathi_tag_keys = set()
-        for vt in vibe_tags_raw:
-            if isinstance(vt, dict):
-                if vt.get("tag_key"):
-                    saathi_tag_keys.add(vt["tag_key"])
-                if vt.get("label"):
-                    saathi_tag_keys.add(vt["label"].lower().replace(" ", "_"))
-
-        # Calculate overlap with student inferred tags
-        overlap_score = len(set(student_tags) & saathi_tag_keys)
-        
-        # Add random jitter (0.0 to 0.5) to prevent deterministic reverse engineering of Saathi roster
-        jitter = random.uniform(0.0, 0.5)
-        total_score = overlap_score + jitter
-        scored_candidates.append((total_score, s))
-
-    # Sort descending by score
-    scored_candidates.sort(key=lambda x: x[0], reverse=True)
-
-    primary_saathi = scored_candidates[0][1]
-    secondary_saathi = scored_candidates[1][1]
-
-    # 4. Create saathi_chats records for PRIMARY and SECONDARY
-    primary_chat_id = f"schat-{uuid.uuid4().hex[:8]}"
-    secondary_chat_id = f"schat-{uuid.uuid4().hex[:8]}"
-    now_iso = datetime.now().isoformat()
-    now_time = datetime.now().strftime("%I:%M %p")
-
-    cursor.execute("""
-        INSERT INTO saathi_chats (id, session_id, saathi_id, student_alias, role, status, consented_history_transfer, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (primary_chat_id, session_id, primary_saathi["id"], "Student", "PRIMARY", "ACTIVE", 0, now_iso))
-
-    cursor.execute("""
-        INSERT INTO saathi_chats (id, session_id, saathi_id, student_alias, role, status, consented_history_transfer, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (secondary_chat_id, session_id, secondary_saathi["id"], "Student", "SECONDARY", "ACTIVE", 0, now_iso))
-
-    # Increment current_load for both Saathis
-    cursor.execute("UPDATE saathis SET current_load = current_load + 1 WHERE id IN (?, ?)",
-                   (primary_saathi["id"], secondary_saathi["id"]))
-
-    # 5. Insert initial greeting messages using aliases only (NEVER real name)
-    p_alias = primary_saathi["alias"] or "Saathi"
-    s_alias = secondary_saathi["alias"] or "Saathi"
-
-    p_greeting = f"Hey! I'm {p_alias}. I'm really glad you reached out today. There is zero pressure here — what's on your mind?"
-    s_greeting = f"Hi there, I'm {s_alias}. I'm here as your secondary peer anchor whenever you'd like to talk or vent."
-
-    cursor.execute("""
-        INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    """, (f"smsg-{uuid.uuid4().hex[:8]}", primary_chat_id, "saathi", p_greeting, now_time))
-
-    cursor.execute("""
-        INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    """, (f"smsg-{uuid.uuid4().hex[:8]}", secondary_chat_id, "saathi", s_greeting, now_time))
-
-    conn.commit()
-    conn.close()
-
-    return SaathiMatchResponse(
-        session_id=session_id,
-        primary=SaathiAssignment(
-            chat_id=primary_chat_id,
-            saathi_id=primary_saathi["id"],
-            alias=p_alias,
-            role="PRIMARY",
-            status="ACTIVE",
-            intro_message=p_greeting,
-            vibeTags=json.loads(primary_saathi["vibe_tags"] or "[]"),
-            avatarSeed=primary_saathi["avatar_seed"],
-            colorScheme=json.loads(primary_saathi["color_scheme"] or "{}")
-        ),
-        secondary=SaathiAssignment(
-            chat_id=secondary_chat_id,
-            saathi_id=secondary_saathi["id"],
-            alias=s_alias,
-            role="SECONDARY",
-            status="ACTIVE",
-            intro_message=s_greeting,
-            vibeTags=json.loads(secondary_saathi["vibe_tags"] or "[]"),
-            avatarSeed=secondary_saathi["avatar_seed"],
-            colorScheme=json.loads(secondary_saathi["color_scheme"] or "{}")
-        )
-    )
+    try:
+        return get_or_create_dual_saathi_match(session_id=session_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +185,15 @@ def transition_saathi(req: SaathiTransitionRequest):
         LIMIT 1
     """, (chat["saathi_id"],))
     new_saathi = cursor.fetchone()
+
+    if not new_saathi:
+        cursor.execute("""
+            SELECT * FROM saathis 
+            WHERE id != ?
+            ORDER BY current_load ASC
+            LIMIT 1
+        """, (chat["saathi_id"],))
+        new_saathi = cursor.fetchone()
 
     new_chat_id = None
     new_alias = None

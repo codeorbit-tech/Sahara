@@ -87,16 +87,83 @@ Content-Type: application/json
     "exam_period",
     "sleep_issues"
   ],
-  "source": "langchain-gemini"
+  "source": "langchain-gemini",
+  "peerRedirect": {
+    "shouldRedirect": true,
+    "matchedDomain": "exam_period",
+    "domainLabel": "Exam & Performance Pressure",
+    "matchReason": "Specialized in coping with exam anxiety and study balance",
+    "action": "OFFER",
+    "matchedSaathi": {
+      "chat_id": "schat-863e64c9",
+      "saathi_id": "saathi-aadhya",
+      "alias": "NightOwl_Eng_23",
+      "role": "PRIMARY",
+      "status": "ACTIVE",
+      "intro_message": "Hey! I'm NightOwl_Eng_23. I know how overwhelming exam and test pressure can get. There is zero pressure here — take your time and vent whatever is on your mind.",
+      "vibeTags": [
+        { "icon": "🌙", "label": "Night owl", "tag_key": "night_owl" },
+        { "icon": "💻", "label": "Engineering student", "tag_key": "academic_stress" },
+        { "icon": "📚", "label": "Academic pressure", "tag_key": "exam_period" },
+        { "icon": "☕", "label": "Filter coffee", "tag_key": "sleep_issues" }
+      ],
+      "avatarSeed": "Aadhya",
+      "colorScheme": {
+        "bg": "bg-[#EBF2EA]",
+        "border": "border-[#9BAE91]",
+        "badgeBg": "bg-[#DCE5D4]",
+        "text": "text-[#173F2A]"
+      }
+    },
+    "secondarySaathi": {
+      "chat_id": "schat-f74b2190",
+      "saathi_id": "saathi-arjun",
+      "alias": "Pacer_Comm_22",
+      "role": "SECONDARY",
+      "status": "ACTIVE",
+      "intro_message": "Hi there, I'm Pacer_Comm_22. I'm here as your secondary peer anchor whenever you'd like to talk.",
+      "vibeTags": [
+        { "icon": "⚡", "label": "Exam & performance pressure", "tag_key": "family_stress" },
+        { "icon": "🎓", "label": "Same-year student", "tag_key": "academic_stress" }
+      ],
+      "avatarSeed": "Arjun",
+      "colorScheme": {
+        "bg": "bg-[#F4ECE1]",
+        "border": "border-[#D8C7B0]",
+        "badgeBg": "bg-[#EDE8DA]",
+        "text": "text-[#173F2A]"
+      }
+    },
+    "handoffText": "You don't have to carry this alone. I've matched you with NightOwl_Eng_23, who specializes in exam & performance pressure and is available to talk right now."
+  }
 }
 ```
+
+> **Seamless Client Handoff**: When `peerRedirect.shouldRedirect` is true, the server has already provisioned the dual-Saathi peer session. The frontend can display an empathetic "Talk to [Alias]" card inside the chat stream. Tapping it immediately opens `/saathi/chat/{chat_id}` with zero latency and zero onboarding friction!
 
 #### Severity Classifications
 | Severity Level | System Meaning & Recommended UI Action |
 | :--- | :--- |
 | `MILD` | Normal student stress. Suggest gentle breathing exercises or daily check-in. |
-| `MODERATE` | Elevated emotional load. Proactively surface option to connect with a peer **Saathi**. |
-| `SEVERE` | Crisis indicator (self-harm, hopeless thoughts). Highlight emergency 24/7 **Crisis Helplines** immediately at top of UI. |
+| `MODERATE` | Elevated emotional load. Proactively surface option to connect with a peer **Saathi** via `peerRedirect`. |
+| `SEVERE` | Crisis indicator (self-harm, hopeless thoughts). Highlight emergency 24/7 **Crisis Helplines** immediately at top of UI. Peer redirection is suppressed. |
+
+---
+
+#### `POST /api/chat/redirect-peer`
+Explicit transition endpoint from Sahara Bot (Layer 1) to Peer Supporter (Layer 2).
+
+```http
+POST /api/chat/redirect-peer
+Content-Type: application/json
+```
+
+```json
+{
+  "session_id": "sess-9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "preferred_tag": "exam_period"
+}
+```
 
 ---
 

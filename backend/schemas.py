@@ -7,6 +7,44 @@ class SessionInitResponse(BaseModel):
     created_at: str
 
 # Chat Schemas (Sahara AI Companion)
+# Peer Supporter & Vibe Tag Schemas
+class VibeTag(BaseModel):
+    icon: str
+    label: str
+    tag_key: Optional[str] = None
+
+class ColorScheme(BaseModel):
+    bg: str
+    border: str
+    badgeBg: str
+    text: str
+
+class SaathiAssignment(BaseModel):
+    chat_id: str
+    saathi_id: str
+    alias: str
+    role: str  # PRIMARY | SECONDARY
+    status: str  # ACTIVE | TRANSITIONING | CLOSED
+    intro_message: str
+    vibeTags: List[VibeTag]
+    avatarSeed: str
+    colorScheme: ColorScheme
+
+class PeerRedirectInfo(BaseModel):
+    shouldRedirect: bool = True
+    matchedDomain: Optional[str] = None
+    domainLabel: Optional[str] = None
+    matchReason: Optional[str] = None
+    action: str = "OFFER"  # OFFER | REDIRECT
+    matchedSaathi: Optional[SaathiAssignment] = None
+    secondarySaathi: Optional[SaathiAssignment] = None
+    handoffText: Optional[str] = None
+
+class PeerRedirectRequest(BaseModel):
+    session_id: str
+    preferred_tag: Optional[str] = None
+
+# Chat Schemas (Sahara AI Companion)
 class ChatMessageHistory(BaseModel):
     role: str
     parts: List[Dict[str, str]]
@@ -23,6 +61,7 @@ class ChatResponse(BaseModel):
     suggestedSeverity: str  # MILD | MODERATE | SEVERE
     inferredTags: List[str] = []
     source: str  # 'langchain-gemini' | 'rule-fallback'
+    peerRedirect: Optional[PeerRedirectInfo] = None
 
 # Check-in Schemas
 class CheckInCreate(BaseModel):
@@ -41,18 +80,7 @@ class CheckInResponse(BaseModel):
     note: str
     timestamp: str
 
-# Saathi Peer Schemas
-class VibeTag(BaseModel):
-    icon: str
-    label: str
-    tag_key: Optional[str] = None
-
-class ColorScheme(BaseModel):
-    bg: str
-    border: str
-    badgeBg: str
-    text: str
-
+# Saathi Peer Schemas Continued
 class SaathiProfileSchema(BaseModel):
     id: str
     alias: str  # Strictly student-facing alias, never real name
@@ -71,17 +99,6 @@ class SaathiAdminProfileSchema(SaathiProfileSchema):
     name: str  # Real name, strictly admin access only
     maxCapacity: int
     currentLoad: int
-
-class SaathiAssignment(BaseModel):
-    chat_id: str
-    saathi_id: str
-    alias: str
-    role: str  # PRIMARY | SECONDARY
-    status: str  # ACTIVE | TRANSITIONING | CLOSED
-    intro_message: str
-    vibeTags: List[VibeTag]
-    avatarSeed: str
-    colorScheme: ColorScheme
 
 class SaathiMatchRequest(BaseModel):
     session_id: Optional[str] = None
