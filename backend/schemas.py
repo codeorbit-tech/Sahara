@@ -161,6 +161,47 @@ class SaathiMessageResponse(BaseModel):
     text: str
     timestamp: str
 
+# Saathi Developer Auth & Inbox Schemas
+class SaathiLoginRequest(BaseModel):
+    username: str
+    password: str
+
+class SaathiLoginResponse(BaseModel):
+    token: str
+    saathi_id: str
+    name: str
+    alias: str
+    avatarSeed: str
+    vibeTags: List[VibeTag]
+    colorScheme: ColorScheme
+
+class SaathiMeResponse(BaseModel):
+    saathi_id: str
+    name: str
+    alias: str
+    year: str
+    field: str
+    avatarSeed: str
+    vibeTags: List[VibeTag]
+    colorScheme: ColorScheme
+    currentLoad: int
+    maxCapacity: int
+
+class DevSaathiChatSummary(BaseModel):
+    chat_id: str
+    session_id: str
+    student_alias: str
+    role: str
+    status: str
+    matched_tags: List[str] = []
+    last_message_text: Optional[str] = None
+    last_message_sender: Optional[str] = None
+    last_message_timestamp: Optional[str] = None
+    total_messages: int = 0
+
+class DevSaathiReplyRequest(BaseModel):
+    text: str
+
 # Counsellor Schemas
 class CounsellorSchema(BaseModel):
     id: str

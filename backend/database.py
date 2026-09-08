@@ -164,10 +164,21 @@ def init_db():
         )
     ''')
 
+    # Saathi Authentication table for developer peer supporters
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS saathi_auth (
+            saathi_id TEXT PRIMARY KEY,
+            username TEXT UNIQUE,
+            password_hash TEXT,
+            salt TEXT,
+            created_at TEXT
+        )
+    ''')
+
     # Safe column migrations for existing SQLite database files
     _ensure_column(cursor, "sessions", "inferred_tags", "TEXT DEFAULT '[]'")
     _ensure_column(cursor, "saathis", "alias", "TEXT")
-    _ensure_column(cursor, "saathis", "max_capacity", "INTEGER DEFAULT 5")
+    _ensure_column(cursor, "saathis", "max_capacity", "INTEGER DEFAULT 10")
     _ensure_column(cursor, "saathis", "current_load", "INTEGER DEFAULT 0")
     _ensure_column(cursor, "saathi_chats", "role", "TEXT DEFAULT 'PRIMARY'")
     _ensure_column(cursor, "saathi_chats", "consented_history_transfer", "INTEGER DEFAULT 0")
@@ -188,133 +199,154 @@ def _ensure_column(cursor, table_name: str, column_name: str, column_def: str):
 def seed_db(conn):
     cursor = conn.cursor()
 
-    # Seed Saathis (Preserving rich metadata, adding privacy alias, capacity, and current load)
-    cursor.execute("SELECT COUNT(*) FROM saathis")
-    count = cursor.fetchone()[0]
-    
-    saathis_data = [
+    from backend.services.auth_service import hash_password
+
+    # The 4 Real Developer Saathi Profiles
+    dev_saathis = [
         (
-            'saathi-aadhya',
-            'Aadhya',
-            'NightOwl_Eng_23',
-            '3rd Year',
-            'Computer Science & Engineering',
+            'saathi-zakwan',
+            'Zakwan',
+            'Zak_TechAnchor_23',
+            'Final Year',
+            'Software Systems & Tech',
             'Tech University',
             json.dumps([
-                {'icon': '🌙', 'label': 'Night owl', 'tag_key': 'night_owl'},
-                {'icon': '💻', 'label': 'Engineering student', 'tag_key': 'academic_stress'},
-                {'icon': '📚', 'label': 'Academic pressure', 'tag_key': 'exam_period'},
-                {'icon': '☕', 'label': 'Filter coffee', 'tag_key': 'sleep_issues'}
+                {'icon': '💻', 'label': 'Engineering & coding stress', 'tag_key': 'academic_stress'},
+                {'icon': '📚', 'label': 'Exam sprint & panic', 'tag_key': 'exam_period'},
+                {'icon': '🌙', 'label': 'Late-night overthinking', 'tag_key': 'night_owl'},
+                {'icon': '☕', 'label': 'Coffee & calm listener', 'tag_key': 'sleep_issues'}
             ]),
-            'Knows the feeling of drowning in sprint deadlines, code errors, and 3 AM imposter syndrome. Calm listener who won’t give unsolicited advice.',
-            'Available tonight (10 PM - 2 AM)',
-            json.dumps(['English', 'Hindi', 'Tamil']),
-            json.dumps(['Trained Peer Supporter', 'Active Listener Certified', 'Year 3 Anchor']),
-            'Aadhya',
+            'Developer and final-year engineer. Been through brutal exam seasons, sprint burnout, and late-night panic. Here to listen without judgment.',
+            'Available today',
+            json.dumps(['English', 'Hindi', 'Urdu']),
+            json.dumps(['Founding Peer Supporter', 'Exam & Tech Stress Anchor', 'Active Listener']),
+            'Zakwan',
             json.dumps({
                 'bg': 'bg-[#EBF2EA]',
                 'border': 'border-[#9BAE91]',
                 'badgeBg': 'bg-[#DCE5D4]',
                 'text': 'text-[#173F2A]'
             }),
-            5,
+            10,
             0
         ),
         (
-            'saathi-arjun',
-            'Arjun',
-            'Pacer_Comm_22',
-            '2nd Year',
-            'Commerce & Economics',
+            'saathi-saifullah',
+            'Saifullah',
+            'Saif_Pacer_22',
+            '3rd Year',
+            'Computer Science & Economics',
             'State University',
             json.dumps([
-                {'icon': '🏏', 'label': 'Sports & Fitness', 'tag_key': 'exam_period'},
-                {'icon': '🎓', 'label': 'Same-year student', 'tag_key': 'academic_stress'},
-                {'icon': '⚡', 'label': 'Exam & performance pressure', 'tag_key': 'family_stress'},
-                {'icon': '🎧', 'label': 'Indie rock', 'tag_key': 'isolation'}
+                {'icon': '⚡', 'label': 'Exam & performance pressure', 'tag_key': 'academic_stress'},
+                {'icon': '📈', 'label': 'Career & placement anxiety', 'tag_key': 'exam_period'},
+                {'icon': '🏠', 'label': 'Family expectations', 'tag_key': 'family_stress'},
+                {'icon': '🎧', 'label': 'Chill listener', 'tag_key': 'isolation'}
             ]),
-            'Balancing varsity athletics and heavy course load taught me how exhausting expectations can get. Here if you just want to vent without drama.',
-            'Available now',
-            json.dumps(['Hindi', 'English', 'Punjabi']),
-            json.dumps(['Trained Peer Supporter', 'Sports-Academic Balance']),
-            'Arjun',
+            'Balancing academic rigor, family expectations, and placement dread. If you need to unpack pressure without feeling judged, let\'s talk.',
+            'Available today',
+            json.dumps(['English', 'Hindi', 'Urdu']),
+            json.dumps(['Founding Peer Supporter', 'Placement & Expectation Peer']),
+            'Saifullah',
             json.dumps({
                 'bg': 'bg-[#F4ECE1]',
                 'border': 'border-[#D8C7B0]',
                 'badgeBg': 'bg-[#EDE8DA]',
                 'text': 'text-[#173F2A]'
             }),
-            5,
+            10,
             0
         ),
         (
-            'saathi-meera',
-            'Meera',
-            'QuietAnchor_Des_22',
-            '2nd Year',
-            'Design & Visual Arts',
-            'Liberal Arts College',
-            json.dumps([
-                {'icon': '🎨', 'label': 'Creative', 'tag_key': 'relationship_stress'},
-                {'icon': '🌿', 'label': 'Calm listener', 'tag_key': 'isolation'},
-                {'icon': '📖', 'label': 'First-year experience', 'tag_key': 'family_stress'},
-                {'icon': '🪴', 'label': 'Plant parent', 'tag_key': 'sleep_issues'}
-            ]),
-            'Moved 1,500 km away from home for college and survived the first-year loneliness crisis. Gentle, patient, and zero judgment.',
-            'Available this afternoon',
-            json.dumps(['English', 'Hindi', 'Bengali']),
-            json.dumps(['Trained Peer Supporter', 'Homesickness & Transition Specialist']),
-            'Meera',
-            json.dumps({
-                'bg': 'bg-[#E8EFF2]',
-                'border': 'border-[#B4CCD8]',
-                'badgeBg': 'bg-[#D6E6ED]',
-                'text': 'text-[#173F2A]'
-            }),
-            5,
-            0
-        ),
-        (
-            'saathi-rohan',
-            'Rohan',
-            'SeniorCode_IT_21',
-            '4th Year',
+            'saathi-riyaz',
+            'Riyaz',
+            'Riyaz_NightOwl_22',
+            '3rd Year',
             'Information Technology',
             'National Institute',
             json.dumps([
-                {'icon': '💻', 'label': 'Tech student', 'tag_key': 'academic_stress'},
-                {'icon': '🌙', 'label': 'Late-night availability', 'tag_key': 'night_owl'},
-                {'icon': '🎮', 'label': 'Gaming', 'tag_key': 'sleep_issues'},
-                {'icon': '💼', 'label': 'Placement stress', 'tag_key': 'exam_period'}
+                {'icon': '🌙', 'label': 'Late-night overthinking', 'tag_key': 'night_owl'},
+                {'icon': '💤', 'label': 'Sleep & insomnia struggles', 'tag_key': 'sleep_issues'},
+                {'icon': '🌿', 'label': 'Calm grounding', 'tag_key': 'isolation'},
+                {'icon': '🎮', 'label': 'Casual gaming & venting', 'tag_key': 'academic_stress'}
             ]),
-            'Went through placement season burnout and existential career dread. Happy to chat about whatever is on your mind at any odd hour.',
-            'Available late night (11 PM - 3 AM)',
-            json.dumps(['English', 'Hindi', 'Marathi']),
-            json.dumps(['Senior Peer Mentor', 'Placement Anxiety Peer']),
-            'Rohan',
+            'The 3 AM thoughts hit hardest when the hostel gets quiet. Always up late, happy to listen and help you decompress your mind.',
+            'Available tonight (10 PM - 3 AM)',
+            json.dumps(['English', 'Hindi', 'Urdu']),
+            json.dumps(['Founding Peer Supporter', 'Late-Night Support Specialist']),
+            'Riyaz',
             json.dumps({
                 'bg': 'bg-[#F2EBEF]',
                 'border': 'border-[#D4BDCB]',
                 'badgeBg': 'bg-[#E8DAE2]',
                 'text': 'text-[#173F2A]'
             }),
-            5,
+            10,
+            0
+        ),
+        (
+            'saathi-samiiksha',
+            'Samiiksha',
+            'Sami_QuietAnchor_23',
+            '3rd Year',
+            'Data Sciences & Design',
+            'Liberal Arts & Tech Institute',
+            json.dumps([
+                {'icon': '🌿', 'label': 'Hostel transition & loneliness', 'tag_key': 'isolation'},
+                {'icon': '💭', 'label': 'Interpersonal & relationship stress', 'tag_key': 'relationship_stress'},
+                {'icon': '🎨', 'label': 'Creative mindful grounding', 'tag_key': 'family_stress'},
+                {'icon': '📖', 'label': 'First-year & campus adaptation', 'tag_key': 'academic_stress'}
+            ]),
+            'Knows how intimidating campus transitions and feeling like an outsider can be. Warm, patient listener who will hold safe space for your thoughts.',
+            'Available this afternoon & evening',
+            json.dumps(['English', 'Hindi', 'Marathi']),
+            json.dumps(['Founding Peer Supporter', 'Campus Transition Specialist']),
+            'Samiiksha',
+            json.dumps({
+                'bg': 'bg-[#E8EFF2]',
+                'border': 'border-[#B4CCD8]',
+                'badgeBg': 'bg-[#D6E6ED]',
+                'text': 'text-[#173F2A]'
+            }),
+            10,
             0
         )
     ]
 
-    if count == 0:
-        cursor.executemany('''
-            INSERT INTO saathis VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', saathis_data)
-    else:
-        # Update existing records with aliases and defaults
-        for s in saathis_data:
+    # Insert or update the 4 developer Saathis
+    for s in dev_saathis:
+        cursor.execute("SELECT id FROM saathis WHERE id = ?", (s[0],))
+        exists = cursor.fetchone()
+        if not exists:
+            cursor.execute('''
+                INSERT INTO saathis VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', s)
+        else:
             cursor.execute("""
                 UPDATE saathis 
-                SET alias = ?, max_capacity = COALESCE(max_capacity, ?), current_load = COALESCE(current_load, ?), vibe_tags = ?
+                SET name = ?, alias = ?, year = ?, field = ?, college_type = ?, vibe_tags = ?,
+                    bio = ?, availability = ?, languages = ?, badges = ?, avatar_seed = ?,
+                    color_scheme = ?, max_capacity = COALESCE(max_capacity, 10)
                 WHERE id = ?
-            """, (s[2], s[13], s[14], s[6], s[0]))
+            """, (s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[0]))
+
+    # Seed Saathi authentication credentials (Default: SaharaPeer2025!)
+    default_users = [
+        ("saathi-zakwan", "zakwan"),
+        ("saathi-saifullah", "saifullah"),
+        ("saathi-riyaz", "riyaz"),
+        ("saathi-samiiksha", "samiiksha")
+    ]
+    now_iso = datetime.now().isoformat()
+    for saathi_id, username in default_users:
+        cursor.execute("SELECT saathi_id FROM saathi_auth WHERE saathi_id = ? OR username = ?", (saathi_id, username))
+        auth_exists = cursor.fetchone()
+        if not auth_exists:
+            p_hash, salt = hash_password("SaharaPeer2025!")
+            cursor.execute("""
+                INSERT INTO saathi_auth (saathi_id, username, password_hash, salt, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (saathi_id, username, p_hash, salt, now_iso))
 
     # Seed Counsellors
     cursor.execute("SELECT COUNT(*) FROM counsellors")

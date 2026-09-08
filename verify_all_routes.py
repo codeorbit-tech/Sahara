@@ -168,7 +168,7 @@ def run_route_tests():
         assert data["session_id"] == session_id
         assert data["primary"]["role"] == "PRIMARY"
         assert data["secondary"]["role"] == "SECONDARY"
-        assert "NightOwl" in data["primary"]["alias"] or "Pacer" in data["primary"]["alias"] or "QuietAnchor" in data["primary"]["alias"] or "SeniorCode" in data["primary"]["alias"]
+        assert any(x in data["primary"]["alias"] for x in ["Zak", "Saif", "Riyaz", "Sami", "NightOwl", "Pacer", "Anchor", "QuietAnchor", "SeniorCode"])
         primary_chat_id = data["primary"]["chat_id"]
         secondary_chat_id = data["secondary"]["chat_id"]
     test("POST /api/saathi/match (Dual-Saathi Matching)", test_saathi_match)
@@ -296,7 +296,7 @@ def run_route_tests():
         assert pr["shouldRedirect"] is True
         assert pr["matchedDomain"] in ["exam_period", "academic_stress"]
         assert pr["matchedSaathi"] is not None
-        assert "NightOwl" in pr["matchedSaathi"]["alias"] or "Pacer" in pr["matchedSaathi"]["alias"] or "SeniorCode" in pr["matchedSaathi"]["alias"]
+        assert any(x in pr["matchedSaathi"]["alias"] for x in ["Zak", "Saif", "Riyaz", "Sami", "NightOwl", "Pacer", "Anchor", "QuietAnchor", "SeniorCode"])
         assert pr["matchedSaathi"]["chat_id"].startswith("schat-")
         assert len(pr["handoffText"]) > 10
         redirect_chat_id = pr["matchedSaathi"]["chat_id"]
@@ -342,6 +342,99 @@ def run_route_tests():
         assert d2["suggestedSeverity"] == "SEVERE"
         assert d2["peerRedirect"] is None, "Peer redirection must be suppressed during SEVERE crisis"
     test("POST /api/chat/redirect-peer & Crisis Safety Suppression", test_explicit_redirect_and_crisis_safety)
+
+    # 26. Saathi Auth: Login with Valid Credentials
+    saathi_token = None
+    def test_saathi_login_success():
+        nonlocal saathi_token
+        r = client.post("/api/saathi/auth/login", json={
+            "username": "zakwan",
+            "password": "SaharaPeer2025!"
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert "token" in data
+        assert data["name"] == "Zakwan"
+        assert "Zak" in data["alias"]
+        saathi_token = data["token"]
+    test("POST /api/saathi/auth/login (Valid Dev Saathi Login)", test_saathi_login_success)
+
+    # 27. Saathi Auth: Login with Invalid Credentials (401)
+    def test_saathi_login_invalid():
+        r = client.post("/api/saathi/auth/login", json={
+            "username": "zakwan",
+            "password": "WrongPassword123!"
+        })
+        assert r.status_code == 401
+    test("POST /api/saathi/auth/login (Invalid Password - 401)", test_saathi_login_invalid)
+
+    # 28. Saathi Auth: GET /api/saathi/auth/me (Bearer Token)
+    def test_saathi_auth_me():
+        assert saathi_token is not None
+        r = client.get("/api/saathi/auth/me", headers={"Authorization": f"Bearer {saathi_token}"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["name"] == "Zakwan"
+        assert data["saathi_id"] == "saathi-zakwan"
+    test("GET /api/saathi/auth/me (Authenticated Profile)", test_saathi_auth_me)
+
+    # 29. Saathi Inbox: GET /api/saathi/inbox/chats
+    def test_saathi_inbox_chats():
+        assert saathi_token is not None
+        r = client.get("/api/saathi/inbox/chats", headers={"Authorization": f"Bearer {saathi_token}"})
+        assert r.status_code == 200
+        chats = r.json()
+        assert isinstance(chats, list)
+    test("GET /api/saathi/inbox/chats (Isolated Student Threads)", test_saathi_inbox_chats)
+
+    # 30. Saathi Human Reply: POST /api/saathi/inbox/chat/{chat_id}/reply
+    def test_saathi_human_reply():
+        # First ensure Zakwan has a chat
+        assert saathi_token is not None
+        # Match zakwan explicitly or find chat
+        r_chats = client.get("/api/saathi/inbox/chats", headers={"Authorization": f"Bearer {saathi_token}"})
+        chats = r_chats.json()
+        target_chat_id = None
+        if chats:
+            target_chat_id = chats[0]["chat_id"]
+        else:
+            # Create a test chat assigned to saathi-zakwan
+            from backend.database import get_db_connection
+            from datetime import datetime
+            conn = get_db_connection()
+            target_chat_id = f"schat-{uuid.uuid4().hex[:8]}"
+            now_iso = datetime.now().isoformat()
+            conn.execute("""
+                INSERT INTO saathi_chats (id, session_id, saathi_id, student_alias, role, status, created_at)
+                VALUES (?, ?, 'saathi-zakwan', 'Student_A', 'PRIMARY', 'ACTIVE', ?)
+            """, (target_chat_id, "sess-test-auth", now_iso))
+            conn.commit()
+            conn.close()
+
+        r_reply = client.post(
+            f"/api/saathi/inbox/chat/{target_chat_id}/reply",
+            headers={"Authorization": f"Bearer {saathi_token}"},
+            json={"text": "Hey, Zakwan here! Take a breath, we can solve this problem together."}
+        )
+        assert r_reply.status_code == 200
+        reply_data = r_reply.json()
+        assert reply_data["sender"] == "saathi"
+        assert "Zakwan here" in reply_data["text"]
+
+        # Verify student sees it in thread
+        r_student_view = client.get(f"/api/saathi/chat/{target_chat_id}")
+        assert r_student_view.status_code == 200
+        msgs = r_student_view.json()
+        assert any(m["text"] == "Hey, Zakwan here! Take a breath, we can solve this problem together." for m in msgs)
+    test("POST /api/saathi/inbox/chat/{chat_id}/reply (Real Human Saathi Reply)", test_saathi_human_reply)
+
+    # 31. Web Portal: GET /dev-inbox
+    def test_dev_inbox_portal():
+        r = client.get("/dev-inbox")
+        assert r.status_code == 200
+        assert "Saathi Portal" in r.text
+        assert "zakwan" in r.text
+    test("GET /dev-inbox (Interactive Web Portal HTML)", test_dev_inbox_portal)
 
     print("\n" + "=" * 80)
     print(f" ALL {passed}/{total} BACKEND ROUTES TESTED & FUNCTIONING FLAWLESSLY!")

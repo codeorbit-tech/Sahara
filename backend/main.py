@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
 from backend.database import init_db
-from backend.routers import health, chat, checkins, saathis, counsellors, resources, analytics
+from backend.routers import health, chat, checkins, saathis, counsellors, resources, analytics, dev_saathis
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +41,7 @@ app.include_router(saathis.router)
 app.include_router(counsellors.router)
 app.include_router(resources.router)
 app.include_router(analytics.router)
+app.include_router(dev_saathis.router)
 
 if __name__ == "__main__":
     import uvicorn

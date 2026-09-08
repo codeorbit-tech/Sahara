@@ -407,7 +407,93 @@ Content-Type: application/json
 
 ---
 
-### 2.5 Licensed Counsellors & Decoupled Appointments
+### 2.5 Saathi Developer Authentication & Peer Supporter Portal
+
+The 4 core developers (**Zakwan, Saifullah, Riyaz, and Samiiksha**) act as the initial real-world Saathi peer supporters. Each developer has dedicated login credentials and an isolated inbox.
+
+#### Developer Accounts & Vibe Specializations
+| Username | Real Name | Student-Facing Alias | Primary Vibe Tags |
+| :--- | :--- | :--- | :--- |
+| `zakwan` | Zakwan | `Zak_TechAnchor_23` | `academic_stress`, `exam_period`, `night_owl` |
+| `saifullah` | Saifullah | `Saif_Pacer_22` | `academic_stress`, `family_stress`, `exam_period` |
+| `riyaz` | Riyaz | `Riyaz_NightOwl_22` | `sleep_issues`, `night_owl`, `isolation` |
+| `samiiksha` | Samiiksha | `Sami_QuietAnchor_23` | `isolation`, `relationship_stress`, `family_stress` |
+
+*Default temporary password for all 4 accounts: `SaharaPeer2025!`*
+
+---
+
+#### `POST /api/saathi/auth/login`
+Authenticates a developer Saathi and returns a 7-day signed Bearer token.
+
+```http
+POST /api/saathi/auth/login
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "zakwan",
+  "password": "SaharaPeer2025!"
+}
+```
+
+#### Response (200 OK)
+```json
+{
+  "token": "eyJzYWF0aGlfaWQiOiJzYWF0aGktemFrd2FuIn0.9fa8b1...",
+  "saathi_id": "saathi-zakwan",
+  "name": "Zakwan",
+  "alias": "Zak_TechAnchor_23",
+  "avatarSeed": "Zakwan",
+  "vibeTags": [
+    { "icon": "💻", "label": "Engineering & coding stress", "tag_key": "academic_stress" },
+    { "icon": "📚", "label": "Exam sprint & panic", "tag_key": "exam_period" }
+  ],
+  "colorScheme": {
+    "bg": "bg-[#EBF2EA]",
+    "border": "border-[#9BAE91]",
+    "badgeBg": "bg-[#DCE5D4]",
+    "text": "text-[#173F2A]"
+  }
+}
+```
+
+---
+
+#### `GET /api/saathi/inbox/chats`
+Returns all active student conversations assigned to the authenticated Saathi.
+
+```http
+GET /api/saathi/inbox/chats
+Authorization: Bearer <saathi_token>
+```
+
+---
+
+#### `POST /api/saathi/inbox/chat/{chat_id}/reply`
+Sends a human peer reply from the authenticated Saathi to the student.
+
+```http
+POST /api/saathi/inbox/chat/schat-89496809/reply
+Authorization: Bearer <saathi_token>
+Content-Type: application/json
+```
+
+```json
+{
+  "text": "Hey! Take a deep breath — I went through the exact same sprint burnout last semester. Let's tackle it step by step."
+}
+```
+
+---
+
+#### 📱 Interactive Web Inbox (`/dev-inbox` or `/saathi-portal`)
+Developers can simply open **`http://127.0.0.1:8000/dev-inbox`** (or `https://<your-app-url>/dev-inbox`) on their phone or browser to log in, view live assigned students, and chat in real-time!
+
+---
+
+### 2.6 Licensed Counsellors & Decoupled Appointments
 
 #### `GET /api/counsellors`
 Retrieves list of certified clinical psychologists.
