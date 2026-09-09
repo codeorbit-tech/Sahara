@@ -79,14 +79,26 @@ async def chat_endpoint(request: ChatRequest):
         VALUES (?, ?, ?, ?, ?, ?)
     """, (sahara_id, session_id, "sahara", reply_text, suggested_severity, now_time))
     
+    # Check student message count in this session to evaluate conversation depth
+    cursor.execute("SELECT COUNT(*) FROM chat_messages WHERE session_id = ? AND sender = 'student'", (session_id,))
+    student_msg_count = cursor.fetchone()[0]
+
     conn.commit()
     conn.close()
     
     # Layer 1 to Layer 2 Peer Redirection Evaluation:
-    # If the student's conversation indicates a specific domain (e.g., exam pressure, sleep issues),
-    # evaluate matching against peer Saathis with specialized vibe tags and provision redirection bridge.
+    # Only offer peer redirection on MODERATE distress with identified domains (suppressed on MILD and SEVERE).
+    # To prevent premature handoff on the first message, require at least 2 conversation turns
+    # unless the student explicitly requested peer support or session was already in MODERATE distress.
+    user_msg_lower = (request.userMessage or "").lower()
+    explicit_peer_request = any(kw in user_msg_lower for kw in [
+        "saathi", "peer", "talk to someone", "human", "counselor", "mentor", 
+        "real person", "speak to someone", "talk to a student"
+    ])
+    has_conversation_depth = (student_msg_count >= 2) or (request.currentSeverity == "MODERATE") or explicit_peer_request
+
     peer_redirect = None
-    if suggested_severity != "SEVERE" and merged_tags:
+    if suggested_severity == "MODERATE" and merged_tags and has_conversation_depth:
         peer_redirect = evaluate_peer_redirection(
             session_id=session_id,
             inferred_tags=merged_tags,
