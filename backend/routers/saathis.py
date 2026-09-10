@@ -341,7 +341,7 @@ def get_saathi_messages(chat_id: str):
 
 
 @router.post("/api/saathi/chat/{chat_id}/message")
-def send_saathi_message(chat_id: str, req: SaathiMessageCreate):
+def send_saathi_message(chat_id: str, req: SaathiMessageCreate, simulate_reply: bool = Query(False, description="Set True for bot simulated reply")):
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -351,25 +351,35 @@ def send_saathi_message(chat_id: str, req: SaathiMessageCreate):
     
     cursor.execute("""
         INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    """, (msg_id, chat_id, "student", req.text, now_time))
+        VALUES (?, ?, 'student', ?, ?)
+    """, (msg_id, chat_id, req.text, now_time))
     
-    # Generate warm peer response
-    saathi_reply_id = f"smsg-{uuid.uuid4().hex[:8]}"
-    saathi_reply_text = "I completely hear you. That sounds really exhausting. Take a deep breath — we can talk through it step by step whenever you're ready."
-    
-    lower = req.text.lower()
-    if "exam" in lower or "study" in lower or "assignment" in lower:
-        saathi_reply_text = "Academics get so suffocating during test season. I remember feeling like everyone else understood the syllabus except me. You're definitely not alone in feeling this way."
-    elif "hostel" in lower or "home" in lower or "lonely" in lower:
-        saathi_reply_text = "Hostel transition is so quietly tough. The first few months away from home can feel really isolating, but it does get easier. I'm here for you."
-    elif "placement" in lower or "job" in lower or "career" in lower:
-        saathi_reply_text = "Placement stress is an absolute pressure cooker. Remember that your first job does not define your entire potential. Let's take it one day at a time."
+    saathi_reply_obj = None
+    if simulate_reply:
+        # Generate simulated peer response if explicitly requested
+        saathi_reply_id = f"smsg-{uuid.uuid4().hex[:8]}"
+        saathi_reply_text = "I completely hear you. That sounds really exhausting. Take a deep breath — we can talk through it step by step whenever you're ready."
         
-    cursor.execute("""
-        INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    """, (saathi_reply_id, chat_id, "saathi", saathi_reply_text, now_time))
+        lower = req.text.lower()
+        if "exam" in lower or "study" in lower or "assignment" in lower:
+            saathi_reply_text = "Academics get so suffocating during test season. I remember feeling like everyone else understood the syllabus except me. You're definitely not alone in feeling this way."
+        elif "hostel" in lower or "home" in lower or "lonely" in lower:
+            saathi_reply_text = "Hostel transition is so quietly tough. The first few months away from home can feel really isolating, but it does get easier. I'm here for you."
+        elif "placement" in lower or "job" in lower or "career" in lower:
+            saathi_reply_text = "Placement stress is an absolute pressure cooker. Remember that your first job does not define your entire potential. Let's take it one day at a time."
+            
+        cursor.execute("""
+            INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+        """, (saathi_reply_id, chat_id, "saathi", saathi_reply_text, now_time))
+
+        saathi_reply_obj = {
+            "id": saathi_reply_id,
+            "saathi_chat_id": chat_id,
+            "sender": "saathi",
+            "text": saathi_reply_text,
+            "timestamp": now_time
+        }
     
     conn.commit()
     conn.close()
@@ -382,11 +392,5 @@ def send_saathi_message(chat_id: str, req: SaathiMessageCreate):
             "text": req.text,
             "timestamp": now_time
         },
-        "saathi_reply": {
-            "id": saathi_reply_id,
-            "saathi_chat_id": chat_id,
-            "sender": "saathi",
-            "text": saathi_reply_text,
-            "timestamp": now_time
-        }
+        "saathi_reply": saathi_reply_obj
     }

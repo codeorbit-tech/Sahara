@@ -216,11 +216,28 @@ def get_or_create_dual_saathi_match(session_id: str, tags: Optional[List[str]] =
         VALUES (?, ?, ?, ?, ?)
     """, (f"smsg-{uuid.uuid4().hex[:8]}", secondary_chat_id, "saathi", s_greeting, now_time))
 
+    # Copy prior student chat_messages into saathi_messages so Saathi portal sees full student history
+    cursor.execute("""
+        SELECT text, timestamp FROM chat_messages 
+        WHERE session_id = ? AND sender = 'student'
+        ORDER BY created_at ASC
+    """, (session_id,))
+    prior_student_msgs = cursor.fetchall()
+    for pm in prior_student_msgs:
+        cursor.execute("SELECT id FROM saathi_messages WHERE saathi_chat_id = ? AND text = ?", (primary_chat_id, pm["text"]))
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
+                VALUES (?, ?, 'student', ?, ?)
+            """, (f"smsg-{uuid.uuid4().hex[:8]}", primary_chat_id, pm["text"], pm["timestamp"]))
+
     if student_message and student_message.strip():
-        cursor.execute("""
-            INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
-            VALUES (?, ?, 'student', ?, ?)
-        """, (f"smsg-{uuid.uuid4().hex[:8]}", primary_chat_id, student_message.strip(), now_time))
+        cursor.execute("SELECT id FROM saathi_messages WHERE saathi_chat_id = ? AND text = ?", (primary_chat_id, student_message.strip()))
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
+                VALUES (?, ?, 'student', ?, ?)
+            """, (f"smsg-{uuid.uuid4().hex[:8]}", primary_chat_id, student_message.strip(), now_time))
 
     conn.commit()
     conn.close()

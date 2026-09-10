@@ -78,6 +78,17 @@ async def chat_endpoint(request: ChatRequest):
         INSERT INTO chat_messages (id, session_id, sender, text, severity, timestamp)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (sahara_id, session_id, "sahara", reply_text, suggested_severity, now_time))
+
+    # Also forward student message to active Saathi peer chat if assigned, so Saathi portal sees it immediately
+    cursor.execute("""
+        SELECT id FROM saathi_chats WHERE session_id = ? AND role = 'PRIMARY' AND status = 'ACTIVE'
+    """, (session_id,))
+    active_saathi_chat = cursor.fetchone()
+    if active_saathi_chat:
+        cursor.execute("""
+            INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
+            VALUES (?, ?, 'student', ?, ?)
+        """, (f"smsg-{uuid.uuid4().hex[:8]}", active_saathi_chat["id"], request.userMessage, now_time))
     
     # Check student message count in this session to evaluate conversation depth
     cursor.execute("SELECT COUNT(*) FROM chat_messages WHERE session_id = ? AND sender = 'student'", (session_id,))
@@ -161,25 +172,58 @@ def get_chat_history(sessionId: str = Query(..., description="Unique client sess
         
     conn = get_db_connection()
     cursor = conn.cursor()
+    
     cursor.execute("""
-        SELECT id, sender, text, severity, timestamp
+        SELECT id, sender, text, severity, timestamp, created_at
         FROM chat_messages
         WHERE session_id = ?
-        ORDER BY created_at ASC
     """, (sessionId.strip(),))
-    rows = cursor.fetchall()
+    ai_rows = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT sm.id, sm.sender, sm.text, 'MODERATE' as severity, sm.timestamp, sm.created_at
+        FROM saathi_messages sm
+        JOIN saathi_chats sc ON sm.saathi_chat_id = sc.id
+        WHERE sc.session_id = ? AND sc.role = 'PRIMARY'
+    """, (sessionId.strip(),))
+    saathi_rows = cursor.fetchall()
     conn.close()
-    
-    messages = []
-    for r in rows:
-        messages.append({
+
+    all_msgs = {}
+    for r in ai_rows:
+        all_msgs[r["id"]] = {
             "id": r["id"],
             "sender": r["sender"],
             "text": r["text"],
             "severity": r["severity"],
-            "timestamp": r["timestamp"]
-        })
-    return {"session_id": sessionId, "messages": messages}
+            "timestamp": r["timestamp"],
+            "created_at": r["created_at"]
+        }
+    for r in saathi_rows:
+        all_msgs[r["id"]] = {
+            "id": r["id"],
+            "sender": "saathi" if r["sender"] == "saathi" else "student",
+            "text": r["text"],
+            "severity": r["severity"],
+            "timestamp": r["timestamp"],
+            "created_at": r["created_at"]
+        }
+
+    sorted_messages = sorted(all_msgs.values(), key=lambda x: x["created_at"])
+
+    return {
+        "session_id": sessionId,
+        "messages": [
+            {
+                "id": m["id"],
+                "sender": m["sender"],
+                "text": m["text"],
+                "severity": m["severity"],
+                "timestamp": m["timestamp"]
+            }
+            for m in sorted_messages
+        ]
+    }
 
 @router.post("/api/chat/reset")
 def reset_chat_history(sessionId: str = Query(..., description="Unique client session UUID")):
