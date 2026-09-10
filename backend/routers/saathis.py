@@ -345,14 +345,25 @@ def send_saathi_message(chat_id: str, req: SaathiMessageCreate, simulate_reply: 
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Ensure saathi_chat exists in database so it reflects in Saathi Dev Portal
+    cursor.execute("SELECT id FROM saathi_chats WHERE id = ?", (chat_id,))
+    chat_exists = cursor.fetchone()
+    now_iso = datetime.now().isoformat()
+    if not chat_exists:
+        cursor.execute("""
+            INSERT INTO saathi_chats (id, session_id, saathi_id, student_alias, role, status, consented_history_transfer, created_at)
+            VALUES (?, ?, 'saathi-zakwan', 'Student', 'PRIMARY', 'ACTIVE', 0, ?)
+        """, (chat_id, f"sess-{uuid.uuid4().hex[:8]}", now_iso))
+        cursor.execute("UPDATE saathis SET current_load = current_load + 1 WHERE id = 'saathi-zakwan'")
+
     # Store student message
     msg_id = f"smsg-{uuid.uuid4().hex[:8]}"
     now_time = datetime.now().strftime("%I:%M %p")
     
     cursor.execute("""
-        INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
-        VALUES (?, ?, 'student', ?, ?)
-    """, (msg_id, chat_id, req.text, now_time))
+        INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp, created_at)
+        VALUES (?, ?, 'student', ?, ?, ?)
+    """, (msg_id, chat_id, req.text, now_time, now_iso))
     
     saathi_reply_obj = None
     if simulate_reply:
@@ -369,9 +380,9 @@ def send_saathi_message(chat_id: str, req: SaathiMessageCreate, simulate_reply: 
             saathi_reply_text = "Placement stress is an absolute pressure cooker. Remember that your first job does not define your entire potential. Let's take it one day at a time."
             
         cursor.execute("""
-            INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp)
-            VALUES (?, ?, ?, ?, ?)
-        """, (saathi_reply_id, chat_id, "saathi", saathi_reply_text, now_time))
+            INSERT INTO saathi_messages (id, saathi_chat_id, sender, text, timestamp, created_at)
+            VALUES (?, ?, 'saathi', ?, ?, ?)
+        """, (saathi_reply_id, chat_id, saathi_reply_text, now_time, now_iso))
 
         saathi_reply_obj = {
             "id": saathi_reply_id,

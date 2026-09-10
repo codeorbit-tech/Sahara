@@ -348,6 +348,20 @@ def seed_db(conn):
                 VALUES (?, ?, ?, ?, ?)
             """, (saathi_id, username, p_hash, salt, now_iso))
 
+    # Seed default active Saathi chats for demo & fallback support
+    default_chats = [
+        ("schat-bb51418f", "sess-seed-demo-1", "saathi-zakwan", "Student", "PRIMARY", "ACTIVE"),
+        ("schat-89496809", "sess-seed-demo-1", "saathi-saifullah", "Student", "SECONDARY", "ACTIVE"),
+    ]
+    for c_id, s_id, saathi_id, alias, role, status in default_chats:
+        cursor.execute("SELECT id FROM saathi_chats WHERE id = ?", (c_id,))
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO saathi_chats (id, session_id, saathi_id, student_alias, role, status, consented_history_transfer, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            """, (c_id, s_id, saathi_id, alias, role, status, now_iso))
+            cursor.execute("UPDATE saathis SET current_load = current_load + 1 WHERE id = ?", (saathi_id,))
+
     # Seed Counsellors
     cursor.execute("SELECT COUNT(*) FROM counsellors")
     if cursor.fetchone()[0] == 0:

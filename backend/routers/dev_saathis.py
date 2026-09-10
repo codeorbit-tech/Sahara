@@ -127,7 +127,7 @@ def get_saathi_inbox_chats(scope: Optional[str] = "my", current_saathi: dict = D
             SELECT sender, text, timestamp, created_at
             FROM saathi_messages
             WHERE saathi_chat_id = ?
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, rowid DESC
             LIMIT 1
         """, (c["chat_id"],))
         last_msg = cursor.fetchone()
